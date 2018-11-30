@@ -1,0 +1,19 @@
+---
+title: "PML Course Project"
+author: "J Winget"
+date: "`r Sys.Date()"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+# Read data
+# Drop first column that is just an index
+
+training <- read.csv('pml-training.csv') %>% select(-X)
+testing <- read.csv('pml-testing.csv') %>% select(-X)
+```
