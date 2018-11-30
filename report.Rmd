@@ -1,19 +1,82 @@
 ---
 title: "PML Course Project"
 author: "J Winget"
-date: "`r Sys.Date()"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
 ```
 
-```{r}
-# Read data
-# Drop first column that is just an index
+## Project instructions
+The goal of your project is to predict the manner in which the participants did the exercise. The outcome is the variable `classe`. The report should describe how the model was built, how cross validation was used, what the expected "out of sample" error is, and why I made the choices I did. The prediction model will also be used to predict 20 different test cases.
 
-training <- read.csv('pml-training.csv') %>% select(-X)
-testing <- read.csv('pml-testing.csv') %>% select(-X)
+```{r, message=FALSE, warning=FALSE}
+# Load libraries
+library(randomForest) # More up-to-date RF implementation than caret
+```
+
+```{r data.import}
+# Read data. Set "#DIV/0!" to NA
+training <- read.csv('pml-training.csv', na.strings=c("NA","","#DIV/0!"))
+testing <- read.csv('pml-testing.csv', na.strings=c("NA","","#DIV/0!"))
+```
+
+## Approach
+
+The `classe` outcome appears to be a factor with `r length(levels(training$classe))` levels. This implies that we need to solve a **classification problem**.
+
+I like using Random Forests for classification. They are fast and don't suffer from as much overfitting problems as other methods such as rpart.
+
+## Data cleaning
+
+Random Forests don't like missing values, so I chose to drop any variables with < 50% of cases and impute to fill in the remainder. It turns out that no imputation is needed because anything with > 50% is complete.
+
+Hopefully the data with few values are not good predictors!
+
+```{r data.cleanup}
+# Get rid of mainly missing variables
+training <- training[colSums(!is.na(training)) > length(training$classe)/2]
+```
+
+## Model fitting
+
+A random forest model is fit using default parameters
+
+```{r model.fit}
+classe.rf <- randomForest(classe ~ ., data=training)
+
+classe.rf
+```
+
+## Cross-validation and error estimation
+
+[In random forests, there is no need for separate testing of out-of-sample error because it is estimated internally](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr)
+
+Therefore the estimated OOB error is simply the final estimated OOB error from the fitted model:
+
+```{r error.estimation}
+# Select the estimated OOB error for the 500th (final) tree
+pct.rf = 100 * classe.rf$err.rate[500,1]
+pct.rf
+```
+
+This value is also shown in the output of `classe.rf` above.
+
+## Prediction
+
+Finally I use the model to predict new values on the test set:
+
+```{r prediction}
+# Set the factor levels identically between training and test sets
+common <- intersect(names(training), names(testing))
+for (p in common) {
+  if (class(training[[p]]) == "factor") {
+    levels(testing[[p]]) <- levels(training[[p]]) } }
+
+# Generate predictions
+classe.pred <- predict(classe.rf, newdata=testing)
+
+classe.pred
 ```

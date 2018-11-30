@@ -11,6 +11,7 @@
 
 <meta name="author" content="J Winget" />
 
+<meta name="date" content="2018-11-30" />
 
 <title>PML Course Project</title>
 
@@ -123,7 +124,7 @@ $(document).ready(function () {
 
 <h1 class="title toc-ignore">PML Course Project</h1>
 <h4 class="author"><em>J Winget</em></h4>
-<h4 class="date"><em>`r Sys.Date()</em></h4>
+<h4 class="date"><em>2018-11-30</em></h4>
 
 </div>
 
@@ -132,35 +133,72 @@ $(document).ready(function () {
 <h2>Project instructions</h2>
 <p>The goal of your project is to predict the manner in which the participants did the exercise. The outcome is the variable <code>classe</code>. The report should describe how the model was built, how cross validation was used, what the expected “out of sample” error is, and why I made the choices I did. The prediction model will also be used to predict 20 different test cases.</p>
 <pre class="r"><code># Load libraries
-library(tidyverse)</code></pre>
-<pre><code>## -- Attaching packages ---------------------------------------------- tidyverse 1.2.1 --</code></pre>
-<pre><code>## v ggplot2 3.1.0     v purrr   0.2.5
-## v tibble  1.4.2     v dplyr   0.7.7
-## v tidyr   0.8.2     v stringr 1.3.1
-## v readr   1.1.1     v forcats 0.3.0</code></pre>
-<pre><code>## Warning: package 'ggplot2' was built under R version 3.5.1</code></pre>
-<pre><code>## Warning: package 'tidyr' was built under R version 3.5.1</code></pre>
-<pre><code>## Warning: package 'dplyr' was built under R version 3.5.1</code></pre>
-<pre><code>## -- Conflicts ------------------------------------------------- tidyverse_conflicts() --
-## x dplyr::filter() masks stats::filter()
-## x dplyr::lag()    masks stats::lag()</code></pre>
-<pre class="r"><code>library(caret)</code></pre>
-<pre><code>## Warning: package 'caret' was built under R version 3.5.1</code></pre>
-<pre><code>## Loading required package: lattice</code></pre>
-<pre><code>## 
-## Attaching package: 'caret'</code></pre>
-<pre><code>## The following object is masked from 'package:purrr':
-## 
-##     lift</code></pre>
-<pre class="r"><code># Read data
-# Drop first column that is just an index
-
-training &lt;- read.csv('pml-training.csv') %&gt;% select(-X)
-testing &lt;- read.csv('pml-testing.csv') %&gt;% select(-X)</code></pre>
+library(randomForest) # More up-to-date RF implementation than caret</code></pre>
+<pre class="r"><code># Read data. Set &quot;#DIV/0!&quot; to NA
+training &lt;- read.csv('pml-training.csv', na.strings=c(&quot;NA&quot;,&quot;&quot;,&quot;#DIV/0!&quot;))
+testing &lt;- read.csv('pml-testing.csv', na.strings=c(&quot;NA&quot;,&quot;&quot;,&quot;#DIV/0!&quot;))</code></pre>
 </div>
 <div id="approach" class="section level2">
 <h2>Approach</h2>
-<p>The <code>classe</code> outcome appears to be a factor with <code>n(levels(training$classe))</code> levels</p>
+<p>The <code>classe</code> outcome appears to be a factor with 5 levels. This implies that we need to solve a <strong>classification problem</strong>.</p>
+<p>I like using Random Forests for classification. They are fast and don’t suffer from as much overfitting problems as other methods such as rpart.</p>
+</div>
+<div id="data-cleaning" class="section level2">
+<h2>Data cleaning</h2>
+<p>Random Forests don’t like missing values, so I chose to drop any variables with &lt; 50% of cases and impute to fill in the remainder. It turns out that no imputation is needed because anything with &gt; 50% is complete.</p>
+<p>Hopefully the data with few values are not good predictors!</p>
+<pre class="r"><code># Get rid of mainly missing variables
+training &lt;- training[colSums(!is.na(training)) &gt; length(training$classe)/2]</code></pre>
+</div>
+<div id="model-fitting" class="section level2">
+<h2>Model fitting</h2>
+<p>A random forest model is fit using default parameters</p>
+<pre class="r"><code>classe.rf &lt;- randomForest(classe ~ ., data=training)
+
+classe.rf</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(formula = classe ~ ., data = training) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 7
+## 
+##         OOB estimate of  error rate: 0.06%
+## Confusion matrix:
+##      A    B    C    D    E  class.error
+## A 5579    1    0    0    0 0.0001792115
+## B    2 3795    0    0    0 0.0005267316
+## C    0    4 3417    1    0 0.0014611338
+## D    0    0    2 3213    1 0.0009328358
+## E    0    0    0    1 3606 0.0002772387</code></pre>
+</div>
+<div id="cross-validation-and-error-estimation" class="section level2">
+<h2>Cross-validation and error estimation</h2>
+<p><a href="https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr">In random forests, there is no need for separate testing of out-of-sample error because it is estimated internally</a></p>
+<p>Therefore the estimated OOB error is simply the final estimated OOB error from the fitted model:</p>
+<pre class="r"><code># Select the estimated OOB error for the 500th (final) tree
+pct.rf = 100 * classe.rf$err.rate[500,1]
+pct.rf</code></pre>
+<pre><code>##        OOB 
+## 0.06115585</code></pre>
+<p>This value is also shown in the output of <code>classe.rf</code> above.</p>
+</div>
+<div id="prediction" class="section level2">
+<h2>Prediction</h2>
+<p>Finally I use the model to predict new values on the test set:</p>
+<pre class="r"><code># Set the factor levels identically between training and test sets
+common &lt;- intersect(names(training), names(testing))
+for (p in common) {
+  if (class(training[[p]]) == &quot;factor&quot;) {
+    levels(testing[[p]]) &lt;- levels(training[[p]]) } }
+
+# Generate predictions
+classe.pred &lt;- predict(classe.rf, newdata=testing)
+
+classe.pred</code></pre>
+<pre><code>##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E</code></pre>
 </div>
 
 
